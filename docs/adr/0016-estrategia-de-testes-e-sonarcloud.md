@@ -35,6 +35,7 @@ FluentAssertions v8+ tem licença comercial, por isso não usamos.
   | `fiapx-video-processor` | `FiapXHacka_fiapx-video-processor` |
 
 - .NET: `dotnet-sonarscanner` + coverlet (OpenCover). Go: `sonarqube-scan-action` + `go test -coverprofile`.
+- Autenticação **secretless** (OIDC do GitHub Actions via `sonarqube-auth-action`): nenhum token armazenado.
 - **Quality gate** (Sonar way, ajustado): cobertura ≥ **80% em código novo**, 0 bugs/vulnerabilidades novas, duplicação < 3%, *security hotspots* revisados.
 - O check do quality gate é **obrigatório** na proteção da branch `main`.
 - Exclusões de cobertura: `Program.cs`, `Migrations/`, `cmd/` (wiring) e DTOs gerados.
