@@ -1,0 +1,260 @@
+# FIAP X — local environment (docs/architecture/02-system-design.md §2.5, ADR-0013)
+#
+#   docker compose up -d --wait                 # infrastructure only
+#   docker compose --profile apps up -d --build # + the 4 services, built from the sibling repos
+#
+# Credentials come from .env (copy .env.example). They are local-only dummies.
+
+name: fiapx
+
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4317
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+
+services:
+  # ---------------------------------------------------------------- infrastructure
+  postgres:
+    image: postgres:17.12-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD}
+      VIDEO_DB_PASSWORD: ${VIDEO_DB_PASSWORD}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      FIAPX_DB_APPLY_SCHEMA: ${FIAPX_DB_APPLY_SCHEMA:-true}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./local/postgres/init.sh:/docker-entrypoint-initdb.d/10-fiapx.sh:ro
+      - ./docs/database:/fiapx/database:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.2.9-management
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./local/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-fiapx.conf:ro
+      - ./local/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:7.4.12-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible storage. MinIO no longer publishes community images, so RustFS (Apache-2.0) stands in for S3 locally.
+  s3:
+    image: rustfs/rustfs:1.0.6
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "${S3_PORT:-9000}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot job: bucket, CORS (browser/Postman PUT and GET with presigned URLs) and lifecycle (ADR-0008).
+  s3-init:
+    image: amazon/aws-cli:2.42.1
+    depends_on:
+      s3:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      BUCKET: ${S3_BUCKET}
+    volumes:
+      - ./local/s3:/fiapx/s3:ro
+    entrypoint: ["/bin/sh", "/fiapx/s3/init.sh"]
+    restart: "no"
+
+  mailpit:
+    image: axllent/mailpit:v1.34.0
+    ports:
+      - "${SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.41.1
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+      - "${OTLP_GRPC_PORT:-4317}:4317"
+      - "${OTLP_HTTP_PORT:-4318}:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  gateway:
+    image: traefik:v3.7.19
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:8080
+      - --api.dashboard=true
+      - --api.insecure=true
+      - --entrypoints.traefik.address=:8088
+      - --ping=true
+      - --ping.entrypoint=traefik
+      - --log.level=INFO
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+      - "${GATEWAY_DASHBOARD_PORT:-8088}:8088"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping", "--ping.entrypoint=traefik", "--entrypoints.traefik.address=:8088"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ---------------------------------------------------------------- applications (profile "apps")
+  # Built from the sibling repositories: clone them next to this one (see README).
+  # The .NET images are chiseled (no shell, no curl), so they have no container healthcheck;
+  # readiness is /health/ready through the gateway or the published port.
+  identity-service:
+    profiles: [apps]
+    build: ../fiapx-identity-service
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: identity-service
+      ConnectionStrings__Postgres: Host=postgres;Database=identity_db;Username=identity_svc;Password=${IDENTITY_DB_PASSWORD}
+      RabbitMq__Uri: amqp://identity_svc:${RABBITMQ_IDENTITY_PASSWORD}@rabbitmq:5672/
+      Auth__Issuer: ${AUTH_ISSUER}
+      Auth__Audience: fiapx-api
+    ports:
+      - "${IDENTITY_PORT:-8091}:8080"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.identity.rule: PathPrefix(`/auth`) || PathPrefix(`/.well-known`)
+      traefik.http.routers.identity.entrypoints: web
+      traefik.http.services.identity.loadbalancer.server.port: "8080"
+
+  video-api:
+    profiles: [apps]
+    build: ../fiapx-video-api
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      s3-init: { condition: service_completed_successfully }
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: video-api
+      ConnectionStrings__Postgres: Host=postgres;Database=video_db;Username=video_svc;Password=${VIDEO_DB_PASSWORD}
+      ConnectionStrings__Redis: redis:6379
+      RabbitMq__Uri: amqp://video_svc:${RABBITMQ_VIDEO_PASSWORD}@rabbitmq:5672/
+      Auth__JwksUrl: http://identity-service:8080/.well-known/jwks.json
+      Auth__Issuer: ${AUTH_ISSUER}
+      Auth__Audience: fiapx-api
+      S3__ServiceUrl: http://s3:9000
+      # Presigned URLs are opened by the client on the host, not inside the compose network.
+      S3__PublicServiceUrl: http://localhost:${S3_PORT:-9000}
+      S3__Bucket: ${S3_BUCKET}
+      S3__AccessKey: ${S3_ACCESS_KEY}
+      S3__SecretKey: ${S3_SECRET_KEY}
+      S3__ForcePathStyle: "true"
+      S3__Region: us-east-1
+    ports:
+      - "${VIDEO_API_PORT:-8092}:8080"
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.videos.rule: PathPrefix(`/videos`)
+      traefik.http.routers.videos.entrypoints: web
+      traefik.http.services.videos.loadbalancer.server.port: "8080"
+
+  notification-service:
+    profiles: [apps]
+    build: ../fiapx-notification-service
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      mailpit: { condition: service_healthy }
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: notification-service
+      ConnectionStrings__Postgres: Host=postgres;Database=notification_db;Username=notification_svc;Password=${NOTIFICATION_DB_PASSWORD}
+      RabbitMq__Uri: amqp://notification_svc:${RABBITMQ_NOTIFICATION_PASSWORD}@rabbitmq:5672/
+      Auth__JwksUrl: http://identity-service:8080/.well-known/jwks.json
+      Auth__Issuer: ${AUTH_ISSUER}
+      Auth__Audience: fiapx-api
+      Smtp__Host: mailpit
+      Smtp__Port: "1025"
+      Smtp__From: FIAP X <no-reply@fiapx.local>
+    ports:
+      - "${NOTIFICATION_PORT:-8093}:8080"
+
+  video-processor:
+    profiles: [apps]
+    build: ../fiapx-video-processor
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      s3-init: { condition: service_completed_successfully }
+    environment:
+      <<: *otel
+      OTEL_SERVICE_NAME: video-processor
+      RABBITMQ_URI: amqp://processor_svc:${RABBITMQ_PROCESSOR_PASSWORD}@rabbitmq:5672/
+      S3_ENDPOINT: http://s3:9000
+      S3_BUCKET: ${S3_BUCKET}
+      S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_REGION: us-east-1
+      WORK_DIR: /work
+      WORKER_CONCURRENCY: "2"
+      LOG_LEVEL: info
+    tmpfs:
+      - /work:size=4g,uid=10001,gid=10001
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  redis-data:
+  s3-data:

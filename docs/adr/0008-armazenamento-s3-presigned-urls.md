@@ -13,7 +13,7 @@
 
 ## Decisão
 
-1. **Amazon S3** (MinIO no ambiente local) como armazenamento de objetos, num bucket privado:
+1. **Amazon S3** (RustFS, compatível com S3, no ambiente local) como armazenamento de objetos, num bucket privado:
    ```
    s3://fiapx-videos-<env>/
      uploads/{userId}/{videoId}/original.{ext}     # lifecycle: apagar após 7 dias

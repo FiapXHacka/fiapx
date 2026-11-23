@@ -50,6 +50,54 @@ flowchart LR
 | [Scripts de banco](docs/database/) | Criação dos bancos, usuários e tabelas |
 | [SonarCloud](docs/sonarcloud.md) | Configuração da análise e quality gate |
 
+## Ambiente local
+
+O `docker-compose.yml` deste repositório sobe a plataforma inteira na sua máquina (ADR-0013).
+
+### 1. Clonar os repositórios lado a lado
+
+Os serviços são construídos a partir dos repositórios irmãos, então todos precisam estar no mesmo diretório:
+
+```bash
+mkdir fiapx-hacka && cd fiapx-hacka
+for r in fiapx fiapx-identity-service fiapx-video-api fiapx-video-processor fiapx-notification-service; do
+  gh repo clone FiapXHacka/$r
+done
+cd fiapx && cp .env.example .env   # credenciais fictícias, só para uso local
+```
+
+### 2. Subir
+
+```bash
+docker compose up -d --wait                  # só a infraestrutura
+docker compose --profile apps up -d --build  # infraestrutura + os 4 serviços
+docker compose down -v                       # derruba e apaga os volumes
+```
+
+Na primeira subida, o Postgres cria os bancos, os usuários por serviço e as tabelas de `docs/database/`.
+Use `FIAPX_DB_APPLY_SCHEMA=false` quando os serviços aplicarem as próprias migrations.
+O RabbitMQ importa a topologia de [`local/rabbitmq/definitions.json`](local/rabbitmq/definitions.json), igual à de [04-mensageria](docs/architecture/04-mensageria.md).
+O job `s3-init` cria o bucket com CORS e lifecycle.
+
+### 3. Endereços
+
+| O quê | URL | Acesso |
+|---|---|---|
+| API (gateway Traefik) | http://localhost:8080 | `/auth/*`, `/.well-known/*` → identity · `/videos/*` → video-api |
+| Painel do Traefik | http://localhost:8088/dashboard/ | — |
+| RabbitMQ Management | http://localhost:15672 | `fiapx` / `fiapx-local` |
+| S3 (RustFS): API / console | http://localhost:9000 / http://localhost:9001 | `S3_ACCESS_KEY` / `S3_SECRET_KEY` do `.env` |
+| Mailpit (e-mails enviados) | http://localhost:8025 | — |
+| Grafana (traces, métricas, logs) | http://localhost:3000 | `admin` / `admin` |
+| Postgres | `localhost:15432` | `postgres` / `POSTGRES_PASSWORD` do `.env` |
+| Redis | `localhost:6379` | — |
+| Serviços direto (sem gateway) | identity :8091 · video-api :8092 · notification :8093 | — |
+
+As portas podem ser trocadas no `.env` se alguma já estiver ocupada na sua máquina.
+
+> **S3 local:** a MinIO deixou de publicar imagens da edição comunitária, por isso o ambiente local usa o
+> [RustFS](https://github.com/rustfs/rustfs), que é compatível com a API do S3. Para os serviços, a diferença é só o endpoint.
+
 ## Como o time trabalha
 
 - Backlog no [GitHub Project da organização](https://github.com/orgs/FiapXHacka/projects). As issues ficam no repositório onde o código muda.

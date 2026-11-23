@@ -28,7 +28,7 @@ O PDF aceita "Docker + Kubernetes ou Docker Compose". O orçamento de créditos 
 No cluster (add-ons via Helm no `fiapx-infra-k8s`; manifests de cada serviço em `k8s/` do próprio repositório, com Kustomize): RabbitMQ (StatefulSet + PVC),
 Redis, KEDA, kube-prometheus-stack, OpenTelemetry Collector e os quatro serviços.
 
-**Local:** o `docker-compose.yml` do repositório `fiapx` sobe **tudo** (4 serviços, Postgres, RabbitMQ, Redis, MinIO, Mailpit,
+**Local:** o `docker-compose.yml` do repositório `fiapx` sobe **tudo** (4 serviços, Postgres, RabbitMQ, Redis, S3 local (RustFS), Mailpit,
 otel-lgtm). É o ambiente de desenvolvimento, dos testes E2E no CI e plano B da demo.
 
 **Custo:** o ambiente AWS é criado para testes integrados e para a gravação, e destruído (`terraform destroy`) fora disso.
