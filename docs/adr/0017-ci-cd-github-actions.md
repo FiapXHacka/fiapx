@@ -13,7 +13,7 @@ Sete repositórios ([ADR-0004](0004-repositorios-por-responsabilidade.md)): quat
 
 ### Fluxo de trabalho
 - **Trunk-based:** branches curtas `feat/<issue>-descricao`, PR para `main` com 1 aprovação, *squash merge*.
-- Mensagens no padrão **Conventional Commits** (`feat(video-api): …`), e o PR referencia a issue (`Closes #12`).
+- Mensagens de commit e títulos de PR em **inglês**, no padrão **Conventional Commits** (`feat(video-api): add presigned upload url`). O título do PR vira o commit na `main` (squash) e a descrição referencia a issue (`Closes #12`).
 - Proteção da `main`: checks de CI + quality gate do Sonar obrigatórios; sem push direto.
 
 ### Pipelines (`.github/workflows/` de cada repositório)
