@@ -125,7 +125,9 @@ jobs:
       - name: Install ffmpeg (testes de integração do adaptador)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: go vet ./...
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0   # versões anteriores foram compiladas com Go < 1.27 e não analisam o código
       - run: go test ./... -race -covermode=atomic -coverprofile=coverage.out
       - uses: SonarSource/sonarqube-scan-action@v5
         env:
