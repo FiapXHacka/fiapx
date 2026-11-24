@@ -141,19 +141,21 @@ flowchart TB
 
 ## 2.5 Ambiente local (docker-compose no repositório `fiapx`)
 
-| Serviço | Imagem | Porta |
+| Serviço | Imagem | Porta no host |
 |---|---|---|
-| identity-service | build local / GHCR | 8081 |
-| video-api | build local / GHCR | 8082 |
-| notification-service | build local / GHCR | 8083 |
-| video-processor | build local / GHCR | — |
-| postgres | `postgres:17` (script de init cria os 3 bancos) | 5432 |
-| rabbitmq | `rabbitmq:4-management` | 5672 / 15672 |
-| redis | `redis:7` | 6379 |
-| minio | `minio/minio` (cria o bucket no startup) | 9000 / 9001 |
-| mailpit | `axllent/mailpit` | 1025 / 8025 |
-| otel-lgtm | `grafana/otel-lgtm` | 3000 / 4317 |
-| gateway | `traefik` (roteia `/auth` e `/videos`) | 8080 |
+| identity-service | build de `../fiapx-identity-service` (profile `apps`) | 8091 |
+| video-api | build de `../fiapx-video-api` (profile `apps`) | 8092 |
+| notification-service | build de `../fiapx-notification-service` (profile `apps`) | 8093 |
+| video-processor | build de `../fiapx-video-processor` (profile `apps`) | — |
+| postgres | `postgres:17.12-alpine` (o init cria os 3 bancos, os usuários e as tabelas) | 15432 |
+| rabbitmq | `rabbitmq:4.2.9-management` (topologia via `definitions.json`) | 5672 / 15672 |
+| redis | `redis:7.4.12-alpine` | 6379 |
+| s3 | `rustfs/rustfs:1.0.6`, compatível com S3 (a MinIO deixou de publicar imagens comunitárias) + job `s3-init` (`amazon/aws-cli`) | 9000 / 9001 |
+| mailpit | `axllent/mailpit:v1.34.0` | 1025 / 8025 |
+| otel-lgtm | `grafana/otel-lgtm:0.41.1` | 3000 / 4317 / 4318 |
+| gateway | `traefik:v3.7.19` (roteia `/auth`, `/.well-known` e `/videos`) | 8080 / 8088 |
+
+Como subir: seção *Ambiente local* do [README](../../README.md).
 
 ## 2.6 Estimativa de capacidade
 

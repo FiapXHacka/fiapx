@@ -1,0 +1,79 @@
+{
+  "rabbit_version": "4.2.9",
+  "users": [
+    { "name": "fiapx", "password_hash": "39487F3GoIPzKALHGU2KulBh90Z6SBSwFTpFwTAOOIUUcksZ", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": ["administrator"] },
+    { "name": "identity_svc", "password_hash": "UMgXvujWjicrHX5kOnmHRseFhDpmgC1yxiVgJOFdVWeVYIhv", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": [] },
+    { "name": "video_svc", "password_hash": "9Q84nEoAxaKMVLu/WHD7T7a2Utu4yUOYNNRci3rl1iaiswuh", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": [] },
+    { "name": "processor_svc", "password_hash": "Jya6DsKCR8udfybQkyHibHz793WI8hDj177VGjYrAFAlxT5q", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": [] },
+    { "name": "notification_svc", "password_hash": "AQgRYYThK0yOufbYId5T5wJjGmorDjzW6F6MKUJwdKRDg2tg", "hashing_algorithm": "rabbit_password_hashing_sha256", "tags": [] }
+  ],
+  "vhosts": [{ "name": "/" }],
+  "permissions": [
+    { "user": "fiapx", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" },
+    { "user": "identity_svc", "vhost": "/",
+      "configure": "^(fiapx\\.events|fiapx\\.dlx)$",
+      "write": "^fiapx\\.events$",
+      "read": "^$" },
+    { "user": "video_svc", "vhost": "/",
+      "configure": "^(fiapx\\.events|fiapx\\.dlx|video-api\\..*)$",
+      "write": "^(fiapx\\.events|video-api\\..*)$",
+      "read": "^(fiapx\\.events|fiapx\\.dlx|video-api\\..*)$" },
+    { "user": "processor_svc", "vhost": "/",
+      "configure": "^(fiapx\\.events|fiapx\\.dlx|video-processor\\..*)$",
+      "write": "^(fiapx\\.events|video-processor\\..*)$",
+      "read": "^(fiapx\\.events|fiapx\\.dlx|video-processor\\..*)$" },
+    { "user": "notification_svc", "vhost": "/",
+      "configure": "^(fiapx\\.events|fiapx\\.dlx|notification-service\\..*)$",
+      "write": "^(fiapx\\.events|notification-service\\..*)$",
+      "read": "^(fiapx\\.events|fiapx\\.dlx|notification-service\\..*)$" }
+  ],
+  "exchanges": [
+    { "name": "fiapx.events", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "fiapx.dlx", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    { "name": "video-processor.video-uploaded", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 3,
+        "x-dead-letter-exchange": "fiapx.dlx",
+        "x-dead-letter-routing-key": "video-processor.video-uploaded.dlq",
+        "x-consumer-timeout": 2400000
+      } },
+    { "name": "video-api.video-status", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "fiapx.dlx",
+        "x-dead-letter-routing-key": "video-api.video-status.dlq"
+      } },
+    { "name": "notification-service.events", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "fiapx.dlx",
+        "x-dead-letter-routing-key": "notification-service.events.dlq"
+      } },
+    { "name": "video-processor.video-uploaded.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "video-api.video-status.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } },
+    { "name": "notification-service.events.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": { "x-queue-type": "quorum" } }
+  ],
+  "bindings": [
+    { "source": "fiapx.events", "vhost": "/", "destination": "video-processor.video-uploaded", "destination_type": "queue", "routing_key": "video.uploaded", "arguments": {} },
+
+    { "source": "fiapx.events", "vhost": "/", "destination": "video-api.video-status", "destination_type": "queue", "routing_key": "video.processing-started", "arguments": {} },
+    { "source": "fiapx.events", "vhost": "/", "destination": "video-api.video-status", "destination_type": "queue", "routing_key": "video.processed", "arguments": {} },
+    { "source": "fiapx.events", "vhost": "/", "destination": "video-api.video-status", "destination_type": "queue", "routing_key": "video.processing-failed", "arguments": {} },
+
+    { "source": "fiapx.events", "vhost": "/", "destination": "notification-service.events", "destination_type": "queue", "routing_key": "user.registered", "arguments": {} },
+    { "source": "fiapx.events", "vhost": "/", "destination": "notification-service.events", "destination_type": "queue", "routing_key": "video.processed", "arguments": {} },
+    { "source": "fiapx.events", "vhost": "/", "destination": "notification-service.events", "destination_type": "queue", "routing_key": "video.processing-failed", "arguments": {} },
+
+    { "source": "fiapx.dlx", "vhost": "/", "destination": "video-processor.video-uploaded.dlq", "destination_type": "queue", "routing_key": "video-processor.video-uploaded.dlq", "arguments": {} },
+    { "source": "fiapx.dlx", "vhost": "/", "destination": "video-api.video-status.dlq", "destination_type": "queue", "routing_key": "video-api.video-status.dlq", "arguments": {} },
+    { "source": "fiapx.dlx", "vhost": "/", "destination": "notification-service.events.dlq", "destination_type": "queue", "routing_key": "notification-service.events.dlq", "arguments": {} }
+  ],
+  "policies": [],
+  "parameters": [],
+  "global_parameters": []
+}

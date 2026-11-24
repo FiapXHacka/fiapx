@@ -17,7 +17,7 @@ A organização `fiapxhacka` foi criada no SonarCloud para o hackathon.
 | Nível | .NET | Go | O que cobre |
 |---|---|---|---|
 | Unitário | xUnit + Shouldly (ou AwesomeAssertions) + NSubstitute | `testing` + `testify` | Domínio (máquina de estados do vídeo, validações), casos de uso com portas mockadas |
-| Integração | `WebApplicationFactory` + **Testcontainers** (Postgres, RabbitMQ, Redis, MinIO) | **testcontainers-go** (RabbitMQ, MinIO) + ffmpeg real com vídeo de 3 s em `testdata/` | Repositórios, outbox/inbox, publisher/consumer, adaptadores S3 e ffmpeg |
+| Integração | `WebApplicationFactory` + **Testcontainers** (Postgres, RabbitMQ, Redis, S3 compatível) | **testcontainers-go** (RabbitMQ, S3 compatível) + ffmpeg real com vídeo de 3 s em `testdata/` | Repositórios, outbox/inbox, publisher/consumer, adaptadores S3 e ffmpeg |
 | Contrato | Exemplos JSON de cada evento validados contra o `asyncapi.yaml` nos dois lados | idem | Compatibilidade .NET ↔ Go |
 | E2E | Job no CI com `docker compose up` + coleção Postman/Newman ou script | — | Registrar → login → upload → aguardar `COMPLETED` → baixar zip; vídeo inválido → `FAILED` + e-mail no Mailpit |
 
