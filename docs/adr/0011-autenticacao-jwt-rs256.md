@@ -18,9 +18,12 @@ Na fase 4, o API Gateway usava um Lambda authorizer com JWT HS256 (segredo compa
      Política mínima: 8 caracteres. E-mail único, sem diferenciar maiúsculas.
    - JWT **RS256**, expiração de 60 min, claims `sub` (userId), `email`, `name`, `iss`, `aud=fiapx-api`.
    - Chave privada no AWS Secrets Manager (no Compose, gerada no startup), com chave pública exposta em `/.well-known/jwks.json` e `kid` para rotação.
+   - **Descoberta OIDC** em `/.well-known/openid-configuration` (`issuer`, `jwks_uri`, `id_token_signing_alg_values_supported: [RS256]`). O `jwks_uri` é montado a partir do host da requisição, então funciona tanto pelo gateway (URL pública) quanto pela rede interna (`http://identity-service:8080`).
+   - O `iss` do token é a URL pública (`Auth:Issuer`, ex.: `http://localhost:8080` no Compose).
 2. **Validação em duas camadas:**
    - **API Gateway HTTP API com JWT authorizer nativo** (issuer + JWKS), sem Lambda. Rotas `/auth/*` e `/.well-known/*` ficam públicas.
-   - Cada serviço também valida o token (`AddJwtBearer` com o JWKS) — *defense in depth* e funcionamento igual no Compose, que não tem gateway.
+   - Cada serviço também valida o token (`AddJwtBearer` com `MetadataAddress` = descoberta OIDC pela rede interna, `ValidIssuer` = URL pública, `ValidAudience = fiapx-api`, apenas RS256, *clock skew* de 30 s), como *defense in depth*. As chaves ficam em cache e são recarregadas quando aparece um `kid` novo.
+   - Chaves de configuração canônicas: `Auth:Issuer`, `Auth:Audience`, `Auth:MetadataAddress`, `Auth:RequireHttpsMetadata` (false só no ambiente local).
 3. **Autorização por dono:** toda consulta da `video-api` filtra por `user_id = sub`. Um vídeo de outro usuário devolve `404`, para não revelar que o id existe.
 
 ## Alternativas consideradas

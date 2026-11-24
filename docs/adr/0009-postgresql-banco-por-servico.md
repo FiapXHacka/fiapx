@@ -15,7 +15,9 @@ Na fase 4 adotamos banco por serviço (ADR-012 do Torque-OS) e PostgreSQL no RDS
 - **PostgreSQL 17** (Amazon RDS na nuvem e container no ambiente local).
 - **Um banco lógico por serviço**, com usuário próprio e sem permissão cruzada, numa única instância RDS para controlar custo:
   `identity_db`, `video_db`, `notification_db`. O `video-processor` não tem banco.
-- Schema versionado com **migrations do EF Core**. O script SQL equivalente fica em `db/schema.sql` de cada serviço, e o script que cria os bancos e usuários fica no `fiapx-infra-db`. Cópias de referência estão em [05-dados](../architecture/05-dados.md).
+- **As migrations do EF Core são a única fonte da verdade do schema.** `db/schema.sql` de cada serviço é gerado com `dotnet ef migrations script --idempotent`, e o CI falha se o modelo tiver mudanças sem migration ou se o script estiver desatualizado. As cópias em [`docs/database/`](../database/) são esses mesmos scripts, para a entrega.
+- O script que cria **bancos e usuários** (`00-create-databases.sql`) é o único aplicado fora dos serviços: no init do Postgres do Compose e pelo `fiapx-infra-db` na AWS.
+- **Aplicação das migrations:** `Database:MigrateOnStartup=true` no Compose (o EF Core 9+ usa um lock de migração, então réplicas subindo juntas não conflitam). No EKS, um `Job` de migração roda antes do rollout, e os pods sobem com `MigrateOnStartup=false`.
 - Chaves primárias `uuid` (v7, ordenável por tempo), geradas na aplicação. Timestamps em `timestamptz` UTC.
 
 ## Alternativas consideradas

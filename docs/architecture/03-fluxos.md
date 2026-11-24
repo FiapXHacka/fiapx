@@ -120,8 +120,10 @@ sequenceDiagram
         W->>MQ: ack (não reprocessa)
     else erro transitório (S3 ou broker fora)
         W->>W: retry em processo 1 s, 4 s, 16 s
-        W->>MQ: nack(requeue) → delivery-count++
-        Note over MQ: na 3ª entrega (x-delivery-limit) → DLX
+        W->>MQ: reject(requeue=false)
+        MQ->>DLQ: dead-letter via DLX
+    else worker cai no meio (OOM)
+        Note over MQ: reentrega conta tentativa, na 3ª (x-delivery-limit) vai para a DLX
         MQ->>DLQ: dead-letter
         DLQ->>W: consumidor da DLQ
         W--)MQ: video.processing-failed {MAX_ATTEMPTS_EXCEEDED}

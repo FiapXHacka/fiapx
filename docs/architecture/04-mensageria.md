@@ -81,8 +81,10 @@ Todos seguem o envelope CloudEvents 1.0 (`id`, `source`, `type`, `time`, `subjec
 
 ## 4.3 Regras para consumidores
 
-1. **Ack manual**, só depois que o efeito estiver persistido (banco, S3 ou evento confirmado).
+1. **Ack manual**, só depois que o efeito estiver persistido (banco, S3 ou evento confirmado). Falha no handler: retry em processo com backoff e, esgotado, `basic.reject(requeue=false)` → DLQ. **Nunca `nack(requeue=true)` para falha** (no RabbitMQ 4 ele não conta tentativa). `nack(requeue=true)` só no shutdown ([ADR-0007](../adr/0007-entrega-confiavel-outbox-inbox.md)).
 2. **Idempotência** pelo `id` do CloudEvent (inbox nos serviços .NET; chave determinística no worker).
 3. Ignorar campos desconhecidos (*tolerant reader*); falhar só em campos obrigatórios ausentes, mandando a mensagem para a DLQ com log.
 4. Propagar o `traceparent` para os eventos derivados.
-5. Mensagem sem `id` ou com `type` desconhecido → ack + log `warn` (não envenena a fila).
+5. Mensagem sem `id` ou com `type` desconhecido → ack + log `warn` (não envenena a fila). Tipo conhecido com `data` inválido → `reject(false)` → DLQ.
+6. O consumer só inicia se houver handler registrado; sem handler, as mensagens esperam na fila durável.
+7. Concorrência nos .NET: `PrefetchCount=16`, `ConsumerConcurrency=4`. No worker: `WORKER_CONCURRENCY` canais com prefetch 1.

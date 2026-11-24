@@ -31,8 +31,8 @@ O projeto base roda `ffmpeg -i <video> -vf fps=1 frame_%04d.png` e compacta os P
 | `INVALID_VIDEO` | permanente | ack + `video.processing-failed` (o `ffprobe` não reconhece o arquivo) |
 | `VIDEO_TOO_LONG` / `VIDEO_TOO_LARGE` | permanente | ack + failed |
 | `NO_FRAMES_EXTRACTED` | permanente | ack + failed |
-| `STORAGE_UNAVAILABLE`, `BROKER_UNAVAILABLE` | transitório | retry em processo (1 s, 4 s, 16 s); se esgotar, nack → redelivery |
-| `PROCESSING_TIMEOUT` | transitório até o limite | nack; no limite de entregas → DLQ → `MAX_ATTEMPTS_EXCEEDED` |
+| `STORAGE_UNAVAILABLE`, `BROKER_UNAVAILABLE` | transitório | retry em processo (1 s, 4 s, 16 s); se esgotar, `reject(requeue=false)` → DLQ → `MAX_ATTEMPTS_EXCEEDED` |
+| `PROCESSING_TIMEOUT` | permanente | ack + `video.processing-failed` (reprocessar o mesmo vídeo estouraria de novo) |
 | `MAX_ATTEMPTS_EXCEEDED` | final | publicado pelo consumidor da DLQ |
 
 Erro permanente **não** volta para a fila: reprocessar não muda o resultado e só gasta CPU.
