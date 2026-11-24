@@ -1,0 +1,205 @@
+asyncapi: 3.0.0
+info:
+  title: FIAP X — eventos da plataforma
+  version: 1.0.0
+  description: |
+    Contratos de mensagem entre os serviços do FIAP X (ADR-0006).
+    Todas as mensagens são CloudEvents 1.0 em structured mode JSON, publicadas na exchange
+    topic `fiapx.events`, com routing key igual ao atributo `type`.
+
+defaultContentType: application/cloudevents+json
+
+servers:
+  local:
+    host: localhost:5672
+    protocol: amqp
+    description: RabbitMQ do docker-compose
+  aws:
+    host: rabbitmq.fiapx.svc.cluster.local:5672
+    protocol: amqp
+    description: RabbitMQ no EKS
+
+channels:
+  userRegistered:
+    address: user.registered
+    messages:
+      userRegistered: { $ref: '#/components/messages/UserRegistered' }
+    bindings:
+      amqp: { is: routingKey, exchange: { name: fiapx.events, type: topic, durable: true } }
+  videoUploaded:
+    address: video.uploaded
+    messages:
+      videoUploaded: { $ref: '#/components/messages/VideoUploaded' }
+    bindings:
+      amqp: { is: routingKey, exchange: { name: fiapx.events, type: topic, durable: true } }
+  videoProcessingStarted:
+    address: video.processing-started
+    messages:
+      videoProcessingStarted: { $ref: '#/components/messages/VideoProcessingStarted' }
+    bindings:
+      amqp: { is: routingKey, exchange: { name: fiapx.events, type: topic, durable: true } }
+  videoProcessed:
+    address: video.processed
+    messages:
+      videoProcessed: { $ref: '#/components/messages/VideoProcessed' }
+    bindings:
+      amqp: { is: routingKey, exchange: { name: fiapx.events, type: topic, durable: true } }
+  videoProcessingFailed:
+    address: video.processing-failed
+    messages:
+      videoProcessingFailed: { $ref: '#/components/messages/VideoProcessingFailed' }
+    bindings:
+      amqp: { is: routingKey, exchange: { name: fiapx.events, type: topic, durable: true } }
+
+operations:
+  identityPublishesUserRegistered:
+    action: send
+    channel: { $ref: '#/channels/userRegistered' }
+    summary: identity-service publica após o cadastro (via outbox)
+  videoApiPublishesVideoUploaded:
+    action: send
+    channel: { $ref: '#/channels/videoUploaded' }
+    summary: video-api publica após confirmar o upload (via outbox)
+  processorConsumesVideoUploaded:
+    action: receive
+    channel: { $ref: '#/channels/videoUploaded' }
+    summary: fila video-processor.video-uploaded
+  processorPublishesStarted:
+    action: send
+    channel: { $ref: '#/channels/videoProcessingStarted' }
+  processorPublishesProcessed:
+    action: send
+    channel: { $ref: '#/channels/videoProcessed' }
+  processorPublishesFailed:
+    action: send
+    channel: { $ref: '#/channels/videoProcessingFailed' }
+  videoApiConsumesStatus:
+    action: receive
+    channel: { $ref: '#/channels/videoProcessed' }
+    summary: fila video-api.video-status (também started e failed)
+  notificationConsumesFailed:
+    action: receive
+    channel: { $ref: '#/channels/videoProcessingFailed' }
+    summary: fila notification-service.events (também user.registered e video.processed)
+
+components:
+  schemas:
+    CloudEventBase:
+      type: object
+      required: [specversion, id, source, type, time, subject, dataschema, data]
+      properties:
+        specversion: { type: string, const: '1.0' }
+        id: { type: string, format: uuid, description: Chave de idempotência }
+        source: { type: string, examples: [fiapx/video-api] }
+        type: { type: string }
+        time: { type: string, format: date-time }
+        subject: { type: string, description: Id do agregado (videoId ou userId) }
+        dataschema: { type: string }
+        datacontenttype: { type: string, const: application/json }
+        traceparent: { type: string, description: W3C Trace Context }
+    StorageRef:
+      type: object
+      required: [bucket, key]
+      properties:
+        bucket: { type: string }
+        key: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+    ErrorCode:
+      type: string
+      enum:
+        - INVALID_VIDEO
+        - VIDEO_TOO_LONG
+        - VIDEO_TOO_LARGE
+        - NO_FRAMES_EXTRACTED
+        - PROCESSING_TIMEOUT
+        - MAX_ATTEMPTS_EXCEEDED
+
+  messages:
+    UserRegistered:
+      name: user.registered
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CloudEventBase'
+          - type: object
+            properties:
+              dataschema: { const: fiapx/user.registered/v1 }
+              data:
+                type: object
+                required: [userId, email, name]
+                properties:
+                  userId: { type: string, format: uuid }
+                  email: { type: string, format: email }
+                  name: { type: string }
+    VideoUploaded:
+      name: video.uploaded
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CloudEventBase'
+          - type: object
+            properties:
+              dataschema: { const: fiapx/video.uploaded/v1 }
+              data:
+                type: object
+                required: [videoId, userId, fileName, contentType, sizeBytes, storage, options]
+                properties:
+                  videoId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  fileName: { type: string }
+                  contentType: { type: string }
+                  sizeBytes: { type: integer, format: int64 }
+                  storage: { $ref: '#/components/schemas/StorageRef' }
+                  options:
+                    type: object
+                    properties:
+                      fps: { type: number, default: 1 }
+    VideoProcessingStarted:
+      name: video.processing-started
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CloudEventBase'
+          - type: object
+            properties:
+              dataschema: { const: fiapx/video.processing-started/v1 }
+              data:
+                type: object
+                required: [videoId, userId, attempt, startedAt]
+                properties:
+                  videoId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  attempt: { type: integer, minimum: 1 }
+                  startedAt: { type: string, format: date-time }
+    VideoProcessed:
+      name: video.processed
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CloudEventBase'
+          - type: object
+            properties:
+              dataschema: { const: fiapx/video.processed/v1 }
+              data:
+                type: object
+                required: [videoId, userId, frameCount, result]
+                properties:
+                  videoId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  frameCount: { type: integer, minimum: 1 }
+                  durationSeconds: { type: number }
+                  result: { $ref: '#/components/schemas/StorageRef' }
+                  processingMs: { type: integer }
+    VideoProcessingFailed:
+      name: video.processing-failed
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/CloudEventBase'
+          - type: object
+            properties:
+              dataschema: { const: fiapx/video.processing-failed/v1 }
+              data:
+                type: object
+                required: [videoId, userId, errorCode, errorMessage]
+                properties:
+                  videoId: { type: string, format: uuid }
+                  userId: { type: string, format: uuid }
+                  errorCode: { $ref: '#/components/schemas/ErrorCode' }
+                  errorMessage: { type: string, description: Texto seguro para exibir ao usuário }
+                  attempt: { type: integer }
