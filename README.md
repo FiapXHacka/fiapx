@@ -74,8 +74,9 @@ docker compose --profile apps up -d --build  # infraestrutura + os 4 serviços
 docker compose down -v                       # derruba e apaga os volumes
 ```
 
-Na primeira subida, o Postgres cria os bancos, os usuários por serviço e as tabelas de `docs/database/`.
-Use `FIAPX_DB_APPLY_SCHEMA=false` quando os serviços aplicarem as próprias migrations.
+Na primeira subida, o Postgres cria só os bancos e um usuário por serviço (`docs/database/00-create-databases.sql`).
+Cada usuário é dono do seu banco. As tabelas são criadas pelos próprios serviços, que aplicam as migrations do EF Core
+ao iniciar (`Database__MigrateOnStartup=true`). As migrations são a única fonte do schema.
 O RabbitMQ importa a topologia de [`local/rabbitmq/definitions.json`](local/rabbitmq/definitions.json), igual à de [04-mensageria](docs/architecture/04-mensageria.md).
 O job `s3-init` cria o bucket com CORS e lifecycle.
 
